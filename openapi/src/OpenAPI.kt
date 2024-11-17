@@ -73,13 +73,13 @@ internal fun toOperation(route: Route): Pair<String, Any> {
   val op = route.findAnnotation<Operation>()
   val funHandler = route.handler as? FunHandler
   return (op?.method?.trimToNull() ?: route.method.name).lowercase() to mapOf(
-    "operationId" to route.handler.let { (if (it is FunHandler) it.instance::class.simpleName + "." + it.f.name else it::class.simpleName) },
+    "operationId" to route.handler.let { (if (it is FunHandler) it.instance::class.simpleName + "." + it.implementationFunction.name else it::class.simpleName) },
     "tags" to listOfNotNull(funHandler?.let { it.instance::class.annotation<Tag>()?.name ?: it.instance::class.simpleName }),
     "parameters" to funHandler?.let {
       it.params.filter { it.source != null }.map { p -> toParameter(p, op) }
     },
     "requestBody" to toRequestBody(route, route.findAnnotation<RequestBody>() ?: op?.requestBody),
-    "responses" to toResponsesByCode(route, op, funHandler?.f?.returnType),
+    "responses" to toResponsesByCode(route, op, funHandler?.implementationFunction?.returnType),
     "security" to (op?.security?.toList() ?: route.findAnnotations<SecurityRequirement>()).toSecurity()
   ) + (op?.let { it.toNonEmptyValues { it.name !in setOf("method", "requestBody", "responses") } } ?: emptyMap())
 }

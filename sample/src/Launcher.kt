@@ -51,6 +51,10 @@ fun sampleServer(port: Int = 8080) = Server(listen = InetSocketAddress(port)).ap
       "Path: ${path("param")}, Query: $queryParams"
     }
 
+    get("/proxy-call/:name") {
+      HttpClientApiGenerator.create<SomeApi>("http://localhost:8080").sayHello(path("name")!!)
+    }
+
     post("/post") {
       data class JsonRequest(val required: String, val hello: String = "World")
       body<JsonRequest>()
@@ -74,4 +78,12 @@ fun sampleServer(port: Int = 8080) = Server(listen = InetSocketAddress(port)).ap
     annotated<AuthRoutes>()
     annotated<OAuthRoutes>()
   }
+
+  api(SomeApiImpl::class) {
+    useOnly<JsonBody>()
+  }
+
+//  context("/foo") {
+//    annotated<SomeApiImpl>(usesInterface = true)
+//  }
 }

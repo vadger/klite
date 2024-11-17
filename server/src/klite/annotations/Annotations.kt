@@ -10,10 +10,13 @@ import kotlin.reflect.KFunction
 import kotlin.reflect.KParameter
 import kotlin.reflect.KParameter.Kind.INSTANCE
 import kotlin.reflect.full.callSuspendBy
+import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.functions
+import kotlin.reflect.full.superclasses
 import kotlin.reflect.jvm.javaMethod
 
 @Target(CLASS) annotation class Path(val value: String)
+@Target(CLASS) annotation class ApiContextPath(val value: String)
 @Target(FUNCTION) annotation class GET(val value: String = "")
 @Target(FUNCTION) annotation class POST(val value: String = "")
 @Target(FUNCTION) annotation class PUT(val value: String = "")
@@ -38,45 +41,62 @@ import kotlin.reflect.jvm.javaMethod
  * Non-annotated custom class is interpreted as the whole POST/PUT body, e.g. a data class deserialized from json.
  */
 @Suppress("NAME_SHADOWING")
-fun Router.annotated(path: String = "", routes: Any, annotations: List<Annotation> = emptyList()) {
+fun Router.annotated(path: String = "", routes: Any, annotations: List<Annotation> = emptyList(), usesInterface: Boolean = false) {
   val cls = routes::class
-  val path = path + (cls.annotation<Path>()?.value ?: "")
+  val path = path + (cls.annotation<Path>(checkInterfaces = true)?.value ?: "")
   val classDecorators = mutableListOf<Decorator>()
   if (routes is Before) classDecorators += routes.toDecorator()
   if (routes is After) classDecorators += routes.toDecorator()
   cls.functions.asSequence().mapNotNull { f ->
-    val a = f.kliteAnnotation ?: return@mapNotNull null
+    val interfaceFunction = if (usesInterface) f.interfaceFunction() else f
+    val a = interfaceFunction?.kliteAnnotation ?: return@mapNotNull null
     val method = RequestMethod.valueOf(a.annotationClass.simpleName!!)
     val subPath = a.annotationClass.members.first().call(a) as String
-    val handler = classDecorators.wrap(FunHandler(routes, f))
+    val handler = classDecorators.wrap(FunHandler(routes, f, interfaceFunction))
     subPath to Route(method, pathParamRegexer.from(path + subPath), annotations + f.annotations + cls.annotations, handler)
   }.sortedBy { it.first.replace(':', '~') }.forEach { add(it.second) }
 }
 
+fun KFunction<*>.interfaceFunction(): KFunction<*>? {
+  return this.name.let { methodName ->
+    this.javaMethod?.declaringClass?.kotlin?.superclasses
+      ?.asSequence()
+      ?.flatMap { it.functions.asSequence() }
+      ?.find { it.name == methodName && it.parameters.size == this.parameters.size }
+  }
+}
+
 fun Router.annotated(routes: Any) = annotated("", routes)
-inline fun <reified T: Any> Router.annotated(path: String = "", annotations: List<Annotation> = emptyList()) = annotated(path, require<T>(), annotations)
+inline fun <reified T: Any> Router.annotated(path: String = "", annotations: List<Annotation> = emptyList(), usesInterface: Boolean = false) = annotated(path, require<T>(), annotations, usesInterface)
 
 private val packageName = GET::class.java.packageName
 private val KAnnotatedElement.kliteAnnotation get() = annotations.filter { it.annotationClass.java.packageName == packageName }
   .let { if (it.size > 1) error("$this cannot have multiple klite annotations: $it") else it.firstOrNull() }
 
-class FunHandler(val instance: Any, val f: KFunction<*>): Handler {
-  val params = f.parameters.map(::Param)
+class FunHandler(
+  val instance: Any,
+  val implementationFunction: KFunction<*>,
+  interfaceFunction: KFunction<*> = implementationFunction
+): Handler {
+  val params = interfaceFunction.parameters.zip(implementationFunction.parameters)
+    .map { Param(it.first, it.second) }
+
   override suspend fun invoke(e: HttpExchange): Any? = try {
-    val args = params.associate { p -> p.p to p.valueFrom(e, instance) }.filter { !it.key.isOptional || it.value != null }
-    f.callSuspendBy(args)
+    val args = params.associate { p -> p.implementationParam to p.valueFrom(e, instance) }.filter { !it.key.isOptional || it.value != null }
+    implementationFunction.callSuspendBy(args)
   } catch (e: InvocationTargetException) {
     throw e.targetException
   }
 }
 
-class Param(val p: KParameter) {
-  val cls = p.type.classifier as KClass<*>
-  val source: Annotation? = p.kliteAnnotation
+class Param(interfaceParam: KParameter, val implementationParam: KParameter) {
+  val p: KParameter = interfaceParam
+  val cls = interfaceParam.type.classifier as KClass<*>
+  val source: Annotation? = interfaceParam.kliteAnnotation
   val name: String = source?.value ?: p.name ?: ""
 
   fun valueFrom(e: HttpExchange, instance: Any) = try {
-    if (p.kind == INSTANCE) instance
+    if (implementationParam.kind == INSTANCE) instance
     else if (cls == HttpExchange::class) e
     else if (cls == Session::class) e.session
     else if (cls == InputStream::class) e.requestStream
@@ -101,5 +121,15 @@ class Param(val p: KParameter) {
   private fun String.toType() = Converter.from<Any>(this, p.type)
 }
 
-inline fun <reified T: Annotation> KClass<*>.annotation(): T? = java.getAnnotation(T::class.java)
-inline fun <reified T: Annotation> KFunction<*>.annotation(): T? = javaMethod!!.getAnnotation(T::class.java)
+inline fun <reified T : Annotation> KFunction<*>.findInterfaceAnnotation(): T? {
+  return this.name.let { methodName ->
+    javaMethod?.declaringClass?.kotlin?.superclasses?.asSequence()?.flatMap { it.functions.asSequence() }
+      ?.find { it.name == methodName }?.findAnnotation<T>()
+  }
+}
+
+inline fun <reified T: Annotation> KClass<*>.annotation(checkInterfaces: Boolean = false): T? = java.getAnnotation(T::class.java)
+  ?: if (checkInterfaces) java.interfaces.asSequence().mapNotNull { it.getAnnotation(T::class.java) }.firstOrNull() else null
+
+inline fun <reified T: Annotation> KFunction<*>.annotation(checkSuperTypes: Boolean = false): T? = javaMethod!!.getAnnotation(T::class.java)
+  ?: if (checkSuperTypes) findInterfaceAnnotation<T>() else null

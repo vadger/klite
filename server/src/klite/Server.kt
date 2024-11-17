@@ -5,6 +5,9 @@ import klite.RequestMethod.GET
 import klite.StatusCode.Companion.NoContent
 import klite.StatusCode.Companion.NotFound
 import klite.StatusCode.Companion.OK
+import klite.annotations.ApiContextPath
+import klite.annotations.annotated
+import klite.annotations.annotation
 import kotlinx.coroutines.*
 import java.lang.Runtime.getRuntime
 import java.lang.Thread.currentThread
@@ -14,6 +17,7 @@ import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.full.primaryConstructor
 
@@ -77,6 +81,18 @@ class Server(
       router.block()
       notFoundRoute.decoratedHandler = router.decorators.wrap(notFoundHandler)
     }
+
+  fun <T : Any> api(implementationClass: KClass<T>, block: Router.() -> Unit = {}): Router {
+    val prefix = implementationClass.annotation<ApiContextPath>(checkInterfaces = true)?.value
+      ?: throw IllegalArgumentException("${ApiContextPath::class} annotation is required for interface class of $implementationClass")
+    return Router(prefix, registry, pathParamRegexer, decorators, renderers, parsers).also { router ->
+      val notFoundRoute = NotFoundRoute(prefix, notFoundHandler)
+      addContext(prefix, router) { runHandler(this, router.route(this) ?: notFoundRoute) }
+      router.annotated(routes = require(implementationClass), usesInterface = true)
+      router.block()
+      notFoundRoute.decoratedHandler = router.decorators.wrap(notFoundHandler)
+    }
+  }
 
   fun assets(prefix: String, handler: AssetsHandler) {
     val route = Route(GET, prefix.toRegex(), handler::class.annotations, handler).apply { decoratedHandler = decorators.wrap(handler) }
