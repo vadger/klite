@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"  # Use different port to avoid conflict with sample project
+    volumes:
+      - ./db/create_dbs.sh:/docker-entrypoint-initdb.d/create_dbs.sh
+      - data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${DB_USER:-multitenant}
+      POSTGRES_PASSWORD: ${DB_PASS:-multitenant}
+
+volumes:
+  data:

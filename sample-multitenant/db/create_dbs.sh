@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-SQL
+    -- Main database test instance
+    CREATE DATABASE ${POSTGRES_USER}_test;
+    GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_USER}_test TO $POSTGRES_USER;
+
+    -- Tenant 1 databases
+    CREATE DATABASE tenant1;
+    GRANT ALL PRIVILEGES ON DATABASE tenant1 TO $POSTGRES_USER;
+    CREATE DATABASE tenant1_test;
+    GRANT ALL PRIVILEGES ON DATABASE tenant1_test TO $POSTGRES_USER;
+
+    -- Tenant 2 databases
+    CREATE DATABASE tenant2;
+    GRANT ALL PRIVILEGES ON DATABASE tenant2 TO $POSTGRES_USER;
+    CREATE DATABASE tenant2_test;
+    GRANT ALL PRIVILEGES ON DATABASE tenant2_test TO $POSTGRES_USER;
+SQL

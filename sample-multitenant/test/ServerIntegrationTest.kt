@@ -1,0 +1,141 @@
+package multitenant
+
+import TransactionRequest
+import TransactionResponse
+import ch.tutteli.atrium.api.fluent.en_GB.*
+import ch.tutteli.atrium.api.verbs.expect
+import klite.Decimal
+import klite.json.JsonHttpClient
+import kotlinx.coroutines.runBlocking
+import main.TenantUser
+import multitenantServer
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS
+import java.io.IOException
+import java.net.http.HttpRequest.BodyPublishers
+
+@TestInstance(PER_CLASS)
+class ServerIntegrationTest : DBTest() {
+  private lateinit var server: klite.Server
+  private lateinit var http: JsonHttpClient
+
+  @BeforeAll
+  fun startServer() {
+    server = multitenantServer(0).apply { start(gracefulStopDelaySec = -1) }
+    http = JsonHttpClient("http://localhost:${server.address.port}", registry = server.registry)
+  }
+
+  @AfterAll
+  fun stopServer() {
+    server.stop()
+  }
+
+  @Test
+  fun `health check returns OK`() {
+    runBlocking {
+      expect(http.get<String>("/health")).toEqual("\"OK\"")
+    }
+  }
+
+  @Test
+  fun `list users from main DB`() {
+    runBlocking {
+      val users = http.get<List<TenantUser>>("/api/users")
+      expect(users).toHaveSize(2)
+      expect(users.map { it.tenantDbName }).toContainExactlyElementsOf(listOf("tenant1", "tenant2"))
+    }
+  }
+
+  @Test
+  fun `tenant operations require Tenant-Id header`() {
+    expect {
+      runBlocking { http.get<List<TransactionResponse>>("/api/transactions") }
+    }.toThrow<IOException>().messageToContain("Tenant-Id header is required")
+  }
+
+  @Test
+  fun `create and list transactions for tenant1`() {
+    runBlocking {
+      // Clean up first
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant1_test") }
+
+      // Create transaction
+      val created = http.post<TransactionResponse>(
+        "/api/transactions",
+        TransactionRequest("Test payment", Decimal("100.50"))
+      ) { header("Tenant-Id", "tenant1_test") }
+
+      expect(created.description).toEqual("Test payment")
+      expect(created.amount).toEqual(Decimal("100.50"))
+
+      // List transactions
+      val transactions = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant1_test")
+      }
+      expect(transactions).toHaveSize(1)
+      expect(transactions.first().description).toEqual("Test payment")
+    }
+  }
+
+  @Test
+  fun `tenant isolation - tenant2 cannot see tenant1 transactions`() {
+    runBlocking {
+      // Clean up both tenants
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant1_test") }
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant2_test") }
+
+      // Create transaction for tenant1
+      http.post<TransactionResponse>(
+        "/api/transactions",
+        TransactionRequest("Tenant1 payment", Decimal("50.00"))
+      ) { header("Tenant-Id", "tenant1_test") }
+
+      // Create transaction for tenant2
+      http.post<TransactionResponse>(
+        "/api/transactions",
+        TransactionRequest("Tenant2 payment", Decimal("75.00"))
+      ) { header("Tenant-Id", "tenant2_test") }
+
+      // Tenant1 should only see their transaction
+      val tenant1Txs = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant1_test")
+      }
+      expect(tenant1Txs).toHaveSize(1)
+      expect(tenant1Txs.first().description).toEqual("Tenant1 payment")
+
+      // Tenant2 should only see their transaction
+      val tenant2Txs = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant2_test")
+      }
+      expect(tenant2Txs).toHaveSize(1)
+      expect(tenant2Txs.first().description).toEqual("Tenant2 payment")
+    }
+  }
+
+  @Test
+  fun `failed transaction rolls back - transaction not saved`() {
+    runBlocking {
+      // Clean up first
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant1_test") }
+
+      // Try to create transaction that fails
+      expect {
+        runBlocking {
+          http.post<TransactionResponse>(
+            "/api/transactions/fail",
+            TransactionRequest("Should be rolled back", Decimal("999.99"))
+          ) { header("Tenant-Id", "tenant1_test") }
+        }
+      }.toThrow<IOException>().messageToContain("Simulated failure")
+
+      // Verify transaction was rolled back - list should be empty
+      val transactions = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant1_test")
+      }
+      expect(transactions).toBeEmpty()
+    }
+  }
+}

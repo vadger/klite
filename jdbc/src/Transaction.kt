@@ -54,10 +54,21 @@ class Transaction(val db: DataSource): AutoCloseable {
   fun detachFromThread() = threadLocal.remove()
 }
 
+/**
+ * Extension point for additional connection providers (e.g., multitenant support).
+ * If set, will be called before falling back to creating a new connection.
+ * Should return the connection to use, or null to fall back to default behavior.
+ */
+var additionalConnectionProvider: ((DataSource) -> Connection?)? = null
+
 fun <R> DataSource.withConnection(block: Connection.() -> R): R {
   val tx = Transaction.current()
-  return if (tx?.db == this) tx.connection.block()
-         else connection.use(block)
+  if (tx?.db == this) return tx.connection.block()
+
+  // Allow extensions (like multitenancy) to provide connection
+  additionalConnectionProvider?.invoke(this)?.let { return it.block() }
+
+  return connection.use(block)
 }
 
 class TransactionContext(val tx: Transaction? = Transaction.current()): ThreadContextElement<Transaction?>, AbstractCoroutineContextElement(Key) {

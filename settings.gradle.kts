@@ -49,6 +49,7 @@ include(
   "i18n",
   "serialization",
   "jdbc",
+  "jdbc-multitenant",
   "jobs",
   "jdbc-test",
   "oauth",
@@ -56,5 +57,6 @@ include(
   "liquibase",
   "slf4j",
   "openapi",
-  "sample"
+  "sample",
+  "sample-multitenant"
 )
