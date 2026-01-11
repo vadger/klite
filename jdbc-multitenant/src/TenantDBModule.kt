@@ -21,11 +21,10 @@ val Config.dbTenantMigrate: String? get() = optional("DB_TENANT_MIGRATE")
  * - Register [TenantDataSourceProvider] implementation
  *
  * This module will:
- * 1. Install the connection provider hook for tenant-aware connections
- * 2. Register [TenantDataSource] for DI injection into repositories
- * 3. Create [TenantMigrator] if changesets are provided (or DB_TENANT_MIGRATE config is set)
- * 4. Install [TenantRequestHandler] as a request decorator
- * 5. Register cleanup on server stop
+ * 1. Register [TenantDataSource] for DI injection into repositories
+ * 2. Create [TenantMigrator] if changesets are provided (or DB_TENANT_MIGRATE config is set)
+ * 3. Install [TenantRequestHandler] as a request decorator
+ * 4. Register cleanup on server stop
  *
  * ## Migration Separation
  *
@@ -66,10 +65,6 @@ class TenantDBModule(
 
   override fun install(server: Server) {
     val registry = server.registry
-
-    // Install the connection provider hook
-    TenantDataSource.installConnectionProvider()
-    log.info("Installed tenant connection provider")
 
     // Get required dependencies
     val resolver = registry.require<TenantResolver>()

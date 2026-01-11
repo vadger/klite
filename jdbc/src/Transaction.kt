@@ -55,18 +55,26 @@ class Transaction(val db: DataSource): AutoCloseable {
 }
 
 /**
- * Extension point for additional connection providers (e.g., multitenant support).
- * If set, will be called before falling back to creating a new connection.
- * Should return the connection to use, or null to fall back to default behavior.
+ * Interface for DataSource implementations that integrate with Klite's [Transaction] management.
+ * Implement this interface to provide custom connection handling for [withConnection],
+ * e.g., multitenant support where each tenant has its own transaction.
  */
-var additionalConnectionProvider: ((DataSource) -> Connection?)? = null
+interface KliteTransactionAwareDataSource : DataSource {
+  /**
+   * Returns the connection from the current transaction if one is active,
+   * or null to fall back to creating a new connection.
+   */
+  fun getTransactionConnection(): Connection?
+}
 
 fun <R> DataSource.withConnection(block: Connection.() -> R): R {
   val tx = Transaction.current()
   if (tx?.db == this) return tx.connection.block()
 
-  // Allow extensions (like multitenancy) to provide connection
-  additionalConnectionProvider?.invoke(this)?.let { return it.block() }
+  // Check if DataSource integrates with Klite's transaction management (e.g., multitenant)
+  if (this is KliteTransactionAwareDataSource) {
+    getTransactionConnection()?.let { return it.block() }
+  }
 
   return connection.use(block)
 }

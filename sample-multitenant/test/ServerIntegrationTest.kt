@@ -138,4 +138,46 @@ class ServerIntegrationTest : DBTest() {
       expect(transactions).toBeEmpty()
     }
   }
+
+  @Test
+  fun `mixed DB operations - read main DB and write tenant DB in same request`() {
+    runBlocking {
+      // Clean up tenant1's transactions
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant1") }
+
+      // Create transaction using the mixed endpoint that:
+      // 1. Reads tenant user from MAIN DB (verifies user exists)
+      // 2. Writes transaction to TENANT DB (with user email in description)
+      val created = http.post<TransactionResponse>(
+        "/api/transactions/with-user-check",
+        TransactionRequest("Mixed DB test", Decimal("42.00"))
+      ) { header("Tenant-Id", "tenant1") }
+
+      // Verify the transaction was created with the user's email from main DB
+      expect(created.description).toContain("admin@tenant1.com")
+      expect(created.description).toContain("Mixed DB test")
+      expect(created.amount).toEqual(Decimal("42.00"))
+
+      // Verify transaction is persisted in tenant DB
+      val transactions = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant1")
+      }
+      expect(transactions).toHaveSize(1)
+      expect(transactions.first().description).toContain("admin@tenant1.com")
+    }
+  }
+
+  @Test
+  fun `mixed DB operations - fails gracefully when tenant user not found in main DB`() {
+    expect {
+      runBlocking {
+        // Use a tenant ID that exists in DB (tenant1) but doesn't match any user's tenantDbName
+        // by using tenant1_test which exists as a database but has no matching user in main DB
+        http.post<TransactionResponse>(
+          "/api/transactions/with-user-check",
+          TransactionRequest("Should fail", Decimal("1.00"))
+        ) { header("Tenant-Id", "tenant1_test") }
+      }
+    }.toThrow<IOException>().messageToContain("Tenant user not found")
+  }
 }

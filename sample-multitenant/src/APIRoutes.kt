@@ -1,4 +1,5 @@
 import klite.Decimal
+import klite.NotFoundException
 import klite.StatusCode
 import klite.annotations.*
 import klite.jdbc.delete
@@ -58,6 +59,29 @@ class APIRoutes(
 
     // Simulate a failure after insert - this should rollback the transaction
     error("Simulated failure after insert - transaction should be rolled back")
+  }
+
+  /**
+   * Mixed DB operation example: reads from main DB and writes to tenant DB in the same request.
+   * This demonstrates that both main transaction (RequestTransactionHandler) and tenant transaction
+   * (TenantRequestHandler) work correctly together.
+   */
+  @POST("/transactions/with-user-check")
+  fun createTransactionWithUserCheck(body: TransactionRequest): TransactionResponse {
+    requireTenantContext()
+
+    // Read from MAIN DB - verify tenant user exists
+    val tenantId = TenantContext.requireCurrent().tenantId
+    val tenantUser = tenantUserRepository.byTenantDbName(tenantId.value)
+      ?: throw NotFoundException("Tenant user not found for: ${tenantId.value}")
+
+    // Write to TENANT DB - create transaction with user email in description
+    val transaction = Transaction(
+      description = "${tenantUser.email}: ${body.description}",
+      amount = body.amount
+    )
+    transactionRepository.save(transaction)
+    return transaction.toResponse()
   }
 
   @DELETE("/transactions/:id")
