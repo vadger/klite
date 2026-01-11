@@ -2,9 +2,11 @@ import klite.Decimal
 import klite.NotFoundException
 import klite.StatusCode
 import klite.annotations.*
+import klite.jdbc.NoTransaction
 import klite.jdbc.delete
 import klite.jdbc.multitenant.TenantContext
 import klite.jdbc.multitenant.TenantDataSource
+import klite.jdbc.multitenant.TenantTransaction
 import main.TenantUser
 import main.TenantUserRepository
 import tenant.Transaction
@@ -82,6 +84,48 @@ class APIRoutes(
     )
     transactionRepository.save(transaction)
     return transaction.toResponse()
+  }
+
+  // ========== NoTransaction test endpoints ==========
+
+  /**
+   * Creates a transaction WITHOUT automatic transaction wrapping.
+   * Each DB operation runs in auto-commit mode.
+   * Verifies that TenantContext is still available even without TenantTransaction.
+   */
+  @NoTransaction
+  @POST("/transactions/no-tx")
+  fun createWithoutTransaction(body: TransactionRequest): TransactionResponse {
+    requireTenantContext()
+    // Verify no TenantTransaction is active
+    check(TenantTransaction.current() == null) { "Expected no TenantTransaction when @NoTransaction is used" }
+
+    val transaction = Transaction(
+      description = body.description,
+      amount = body.amount
+    )
+    transactionRepository.save(transaction)
+    return transaction.toResponse()
+  }
+
+  /**
+   * Creates a transaction without automatic transaction, then fails.
+   * This verifies that the insert is NOT rolled back (since each operation auto-commits).
+   */
+  @NoTransaction
+  @POST("/transactions/no-tx-fail")
+  fun createWithoutTransactionAndFail(body: TransactionRequest): TransactionResponse {
+    requireTenantContext()
+    check(TenantTransaction.current() == null) { "Expected no TenantTransaction when @NoTransaction is used" }
+
+    val transaction = Transaction(
+      description = body.description,
+      amount = body.amount
+    )
+    transactionRepository.save(transaction)
+
+    // Simulate a failure after insert - with @NoTransaction, the insert should NOT be rolled back
+    error("Simulated failure after insert - transaction should NOT be rolled back because of @NoTransaction")
   }
 
   @DELETE("/transactions/:id")

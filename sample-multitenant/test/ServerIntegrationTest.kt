@@ -180,4 +180,99 @@ class ServerIntegrationTest : DBTest() {
       }
     }.toThrow<IOException>().messageToContain("Tenant user not found")
   }
+
+  // ========== NoTransaction tests ==========
+
+  @Test
+  fun `NoTransaction route creates transaction successfully without automatic transaction`() {
+    runBlocking {
+      // Clean up first
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant1_test") }
+
+      // Create transaction using @NoTransaction endpoint
+      val created = http.post<TransactionResponse>(
+        "/api/transactions/no-tx",
+        TransactionRequest("No-TX payment", Decimal("123.45"))
+      ) { header("Tenant-Id", "tenant1_test") }
+
+      expect(created.description).toEqual("No-TX payment")
+      expect(created.amount).toEqual(Decimal("123.45"))
+
+      // Verify transaction is persisted (auto-committed)
+      val transactions = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant1_test")
+      }
+      expect(transactions).toHaveSize(1)
+      expect(transactions.first().description).toEqual("No-TX payment")
+    }
+  }
+
+  @Test
+  fun `NoTransaction route failure does NOT rollback - insert is persisted`() {
+    runBlocking {
+      // Clean up first
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant1_test") }
+
+      // Try to create transaction that fails AFTER insert
+      // With @NoTransaction, the insert should be auto-committed and NOT rolled back
+      expect {
+        runBlocking {
+          http.post<TransactionResponse>(
+            "/api/transactions/no-tx-fail",
+            TransactionRequest("Should persist despite failure", Decimal("777.77"))
+          ) { header("Tenant-Id", "tenant1_test") }
+        }
+      }.toThrow<IOException>().messageToContain("should NOT be rolled back")
+
+      // Verify transaction WAS persisted (because @NoTransaction = auto-commit mode)
+      val transactions = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant1_test")
+      }
+      expect(transactions).toHaveSize(1)
+      expect(transactions.first().description).toEqual("Should persist despite failure")
+      expect(transactions.first().amount).toEqual(Decimal("777.77"))
+    }
+  }
+
+  @Test
+  fun `NoTransaction vs normal transaction - compare rollback behavior`() {
+    runBlocking {
+      // Clean up both test tenants
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant1_test") }
+      http.delete<Unit>("/api/transactions") { header("Tenant-Id", "tenant2_test") }
+
+      // Test 1: Normal transaction endpoint with failure - should rollback
+      expect {
+        runBlocking {
+          http.post<TransactionResponse>(
+            "/api/transactions/fail",
+            TransactionRequest("Normal TX - should rollback", Decimal("111.11"))
+          ) { header("Tenant-Id", "tenant1_test") }
+        }
+      }.toThrow<IOException>()
+
+      // Test 2: @NoTransaction endpoint with failure - should NOT rollback
+      expect {
+        runBlocking {
+          http.post<TransactionResponse>(
+            "/api/transactions/no-tx-fail",
+            TransactionRequest("NoTX - should persist", Decimal("222.22"))
+          ) { header("Tenant-Id", "tenant2_test") }
+        }
+      }.toThrow<IOException>()
+
+      // Verify: Normal transaction was rolled back
+      val tenant1Txs = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant1_test")
+      }
+      expect(tenant1Txs).toBeEmpty()
+
+      // Verify: @NoTransaction insert was persisted
+      val tenant2Txs = http.get<List<TransactionResponse>>("/api/transactions") {
+        header("Tenant-Id", "tenant2_test")
+      }
+      expect(tenant2Txs).toHaveSize(1)
+      expect(tenant2Txs.first().description).toEqual("NoTX - should persist")
+    }
+  }
 }
