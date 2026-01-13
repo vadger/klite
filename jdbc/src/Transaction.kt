@@ -53,19 +53,6 @@ class Transaction: AutoCloseable {
   fun detachFromThread() = threadLocal.remove()
 }
 
-/**
- * Interface for DataSource implementations that integrate with Klite's [Transaction] management.
- * Implement this interface to provide custom connection handling for [withConnection],
- * e.g., multitenant support where each tenant has its own transaction.
- */
-interface KliteTransactionAwareDataSource : DataSource {
-  /**
-   * Returns the connection from the current transaction if one is active,
-   * or null to fall back to creating a new connection.
-   */
-  fun getTransactionConnection(): Connection?
-}
-
 fun <R> DataSource.withConnection(block: Connection.() -> R): R {
   val tx = Transaction.current()
   return if (tx != null) tx.connection(this).block()

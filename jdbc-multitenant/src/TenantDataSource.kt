@@ -1,6 +1,5 @@
 package klite.jdbc.multitenant
 
-import klite.jdbc.KliteTransactionAwareDataSource
 import java.io.PrintWriter
 import java.sql.Connection
 import java.sql.SQLFeatureNotSupportedException
@@ -18,17 +17,8 @@ import javax.sql.DataSource
  *
  * When repository operations execute, this wrapper automatically routes to the
  * current tenant's actual DataSource via [TenantContext].
- *
- * Implements [KliteTransactionAwareDataSource] to integrate with [klite.jdbc.withConnection],
- * allowing proper transaction management when accessing tenant databases.
  */
-class TenantDataSource : DataSource, KliteTransactionAwareDataSource {
-
-  override fun getTransactionConnection(): Connection? {
-    val ctx = TenantContext.current() ?: return null
-    val tenantTx = TenantTransaction.current() ?: return null
-    return if (tenantTx.db == ctx.dataSource) tenantTx.connection else null
-  }
+class TenantDataSource : DataSource {
 
   private val currentDataSource: DataSource
     get() = TenantContext.requireCurrent().dataSource
