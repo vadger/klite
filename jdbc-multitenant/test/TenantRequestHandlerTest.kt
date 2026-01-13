@@ -7,6 +7,7 @@ import klite.HttpExchange
 import klite.StatusCode.Companion.Found
 import klite.StatusCodeException
 import klite.jdbc.NoTransaction
+import klite.jdbc.Transaction
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -34,7 +35,7 @@ class TenantRequestHandlerTest {
   @AfterEach
   fun cleanup() {
     TenantContext.current()?.detachFromThread()
-    TenantTransaction.current()?.detachFromThread()
+    Transaction.current()?.detachFromThread()
     clearAllMocks()
   }
 
@@ -60,21 +61,21 @@ class TenantRequestHandlerTest {
 
     expect(handlerCalled).toEqual(true)
     expect(TenantContext.current()).toEqual(null)
-    expect(TenantTransaction.current()).toEqual(null)
+    expect(Transaction.current()).toEqual(null)
   }
 
   @Test
-  fun `sets up TenantContext and TenantTransaction for normal request`() {
+  fun `sets up TenantContext and Transaction for normal request`() {
     val exchange = exchangeWithTenant(hasNoTransaction = false)
     every { mockResolver.resolve(exchange) } returns tenantId
 
     var contextInHandler: TenantContext? = null
-    var transactionInHandler: TenantTransaction? = null
+    var transactionInHandler: Transaction? = null
 
     runBlocking {
       handler.decorate(exchange) {
         contextInHandler = TenantContext.current()
-        transactionInHandler = TenantTransaction.current()
+        transactionInHandler = Transaction.current()
         "result"
       }
     }
@@ -82,11 +83,10 @@ class TenantRequestHandlerTest {
     expect(contextInHandler).notToEqualNull()
     expect(contextInHandler!!.tenantId).toEqual(tenantId)
     expect(transactionInHandler).notToEqualNull()
-    expect(transactionInHandler!!.tenantId).toEqual(tenantId)
 
     // After request, both should be cleaned up
     expect(TenantContext.current()).toEqual(null)
-    expect(TenantTransaction.current()).toEqual(null)
+    expect(Transaction.current()).toEqual(null)
   }
 
   @Test
@@ -98,7 +98,7 @@ class TenantRequestHandlerTest {
     runBlocking {
       handler.decorate(exchange) {
         // Access connection to open it
-        TenantTransaction.current()!!.connection
+        Transaction.current()!!.connection(mockDataSource)
         "success"
       }
     }
@@ -117,7 +117,7 @@ class TenantRequestHandlerTest {
     expect {
       runBlocking {
         handler.decorate(exchange) {
-          TenantTransaction.current()!!.connection
+          Transaction.current()!!.connection(mockDataSource)
           throw StatusCodeException(Found, "redirect")
         }
       }
@@ -136,7 +136,7 @@ class TenantRequestHandlerTest {
     expect {
       runBlocking {
         handler.decorate(exchange) {
-          TenantTransaction.current()!!.connection
+          Transaction.current()!!.connection(mockDataSource)
           error("Kaboom")
         }
       }
@@ -149,17 +149,17 @@ class TenantRequestHandlerTest {
   // ========== NoTransaction tests ==========
 
   @Test
-  fun `NoTransaction sets up TenantContext but NOT TenantTransaction`() {
+  fun `NoTransaction sets up TenantContext but NOT Transaction`() {
     val exchange = exchangeWithTenant(hasNoTransaction = true)
     every { mockResolver.resolve(exchange) } returns tenantId
 
     var contextInHandler: TenantContext? = null
-    var transactionInHandler: TenantTransaction? = null
+    var transactionInHandler: Transaction? = null
 
     runBlocking {
       handler.decorate(exchange) {
         contextInHandler = TenantContext.current()
-        transactionInHandler = TenantTransaction.current()
+        transactionInHandler = Transaction.current()
         "result"
       }
     }
@@ -169,7 +169,7 @@ class TenantRequestHandlerTest {
     expect(contextInHandler!!.tenantId).toEqual(tenantId)
     expect(contextInHandler!!.dataSource).toBeTheInstance(mockDataSource)
 
-    // TenantTransaction should NOT be set
+    // Transaction should NOT be set
     expect(transactionInHandler).toEqual(null)
 
     // After request, context should be cleaned up
@@ -205,7 +205,7 @@ class TenantRequestHandlerTest {
       runBlocking {
         handler.decorate(exchange) {
           expect(TenantContext.current()).notToEqualNull()
-          expect(TenantTransaction.current()).toEqual(null)
+          expect(Transaction.current()).toEqual(null)
           error("Kaboom")
         }
       }
@@ -229,7 +229,7 @@ class TenantRequestHandlerTest {
     }
 
     expect(TenantContext.current()).toEqual(null)
-    expect(TenantTransaction.current()).toEqual(null)
+    expect(Transaction.current()).toEqual(null)
   }
 
   @Test
@@ -244,6 +244,6 @@ class TenantRequestHandlerTest {
     }.toThrow<IllegalStateException>()
 
     expect(TenantContext.current()).toEqual(null)
-    expect(TenantTransaction.current()).toEqual(null)
+    expect(Transaction.current()).toEqual(null)
   }
 }

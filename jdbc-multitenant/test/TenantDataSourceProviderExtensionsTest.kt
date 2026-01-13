@@ -3,6 +3,7 @@ package klite.jdbc.multitenant
 import ch.tutteli.atrium.api.fluent.en_GB.*
 import ch.tutteli.atrium.api.verbs.expect
 import io.mockk.*
+import klite.jdbc.Transaction
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -27,7 +28,7 @@ class TenantDataSourceProviderExtensionsTest {
   @AfterEach
   fun cleanup() {
     TenantContext.current()?.detachFromThread()
-    TenantTransaction.current()?.detachFromThread()
+    Transaction.current()?.detachFromThread()
     clearAllMocks()
   }
 
@@ -49,12 +50,12 @@ class TenantDataSourceProviderExtensionsTest {
   }
 
   @Test
-  fun `withTenant does NOT set up TenantTransaction`() {
-    var transactionInBlock: TenantTransaction? = null
+  fun `withTenant does NOT set up Transaction`() {
+    var transactionInBlock: Transaction? = null
 
     runBlocking {
       mockProvider.withTenant(tenantId) {
-        transactionInBlock = TenantTransaction.current()
+        transactionInBlock = Transaction.current()
       }
     }
 
@@ -97,21 +98,20 @@ class TenantDataSourceProviderExtensionsTest {
   // ========== withTenantTransaction tests ==========
 
   @Test
-  fun `withTenantTransaction sets up TenantContext and TenantTransaction`() {
+  fun `withTenantTransaction sets up TenantContext and Transaction`() {
     var contextInBlock: TenantContext? = null
-    var transactionInBlock: TenantTransaction? = null
+    var transactionInBlock: Transaction? = null
 
     runBlocking {
       mockProvider.withTenantTransaction(tenantId) {
         contextInBlock = TenantContext.current()
-        transactionInBlock = TenantTransaction.current()
+        transactionInBlock = Transaction.current()
       }
     }
 
     expect(contextInBlock).notToEqualNull()
     expect(contextInBlock!!.tenantId).toEqual(tenantId)
     expect(transactionInBlock).notToEqualNull()
-    expect(transactionInBlock!!.tenantId).toEqual(tenantId)
   }
 
   @Test
@@ -121,7 +121,7 @@ class TenantDataSourceProviderExtensionsTest {
     runBlocking {
       mockProvider.withTenantTransaction(tenantId) {
         // Access connection to open it
-        TenantTransaction.current()!!.connection
+        Transaction.current()!!.connection(mockDataSource)
       }
     }
 
@@ -137,7 +137,7 @@ class TenantDataSourceProviderExtensionsTest {
     expect {
       runBlocking {
         mockProvider.withTenantTransaction(tenantId) {
-          TenantTransaction.current()!!.connection
+          Transaction.current()!!.connection(mockDataSource)
           error("Boom!")
         }
       }
@@ -165,7 +165,7 @@ class TenantDataSourceProviderExtensionsTest {
     }
 
     expect(TenantContext.current()).toEqual(null)
-    expect(TenantTransaction.current()).toEqual(null)
+    expect(Transaction.current()).toEqual(null)
   }
 
   @Test
@@ -179,7 +179,7 @@ class TenantDataSourceProviderExtensionsTest {
     }.toThrow<IllegalStateException>()
 
     expect(TenantContext.current()).toEqual(null)
-    expect(TenantTransaction.current()).toEqual(null)
+    expect(Transaction.current()).toEqual(null)
   }
 
   // ========== Nested usage tests ==========

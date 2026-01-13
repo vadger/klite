@@ -7,6 +7,7 @@ import io.mockk.clearAllMocks
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import klite.jdbc.Transaction
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -27,7 +28,7 @@ class TenantDataSourceTest {
   @AfterEach
   fun cleanup() {
     TenantContext.current()?.detachFromThread()
-    TenantTransaction.current()?.detachFromThread()
+    Transaction.current()?.detachFromThread()
     clearAllMocks()
   }
 

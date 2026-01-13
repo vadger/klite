@@ -3,10 +3,10 @@ import klite.NotFoundException
 import klite.StatusCode
 import klite.annotations.*
 import klite.jdbc.NoTransaction
+import klite.jdbc.Transaction as JdbcTransaction
 import klite.jdbc.delete
 import klite.jdbc.multitenant.TenantContext
 import klite.jdbc.multitenant.TenantDataSource
-import klite.jdbc.multitenant.TenantTransaction
 import main.TenantUser
 import main.TenantUserRepository
 import tenant.Transaction
@@ -91,14 +91,14 @@ class APIRoutes(
   /**
    * Creates a transaction WITHOUT automatic transaction wrapping.
    * Each DB operation runs in auto-commit mode.
-   * Verifies that TenantContext is still available even without TenantTransaction.
+   * Verifies that TenantContext is still available even without Transaction.
    */
   @NoTransaction
   @POST("/transactions/no-tx")
   fun createWithoutTransaction(body: TransactionRequest): TransactionResponse {
     requireTenantContext()
-    // Verify no TenantTransaction is active
-    check(TenantTransaction.current() == null) { "Expected no TenantTransaction when @NoTransaction is used" }
+    // Verify no Transaction is active
+    check(JdbcTransaction.current() == null) { "Expected no Transaction when @NoTransaction is used" }
 
     val transaction = Transaction(
       description = body.description,
@@ -116,7 +116,7 @@ class APIRoutes(
   @POST("/transactions/no-tx-fail")
   fun createWithoutTransactionAndFail(body: TransactionRequest): TransactionResponse {
     requireTenantContext()
-    check(TenantTransaction.current() == null) { "Expected no TenantTransaction when @NoTransaction is used" }
+    check(JdbcTransaction.current() == null) { "Expected no Transaction when @NoTransaction is used" }
 
     val transaction = Transaction(
       description = body.description,

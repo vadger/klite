@@ -2,6 +2,8 @@ package klite.jdbc.multitenant
 
 import klite.*
 import klite.jdbc.NoTransaction
+import klite.jdbc.Transaction
+import klite.jdbc.TransactionContext
 import kotlinx.coroutines.withContext
 import kotlin.reflect.full.hasAnnotation
 
@@ -11,13 +13,13 @@ import kotlin.reflect.full.hasAnnotation
  * For requests where a tenant is resolved:
  * 1. Optionally runs migrations for the tenant (if [migrator] is provided)
  * 2. Sets up [TenantContext] with the tenant's DataSource
- * 3. Wraps the request in a [TenantTransaction] for proper commit/rollback (unless [NoTransaction] is used)
+ * 3. Wraps the request in a [Transaction] for proper commit/rollback (unless [NoTransaction] is used)
  *
  * For requests where no tenant is resolved, the handler is called without tenant context.
  *
  * When [NoTransaction] annotation is present on the route:
  * - [TenantContext] is still set up (tenant ID and DataSource available)
- * - [TenantTransaction] is NOT created (connections use auto-commit mode)
+ * - [Transaction] is NOT created (connections use auto-commit mode)
  * - This is useful for routes with external API calls to avoid long-running transactions
  *
  * Usage:
@@ -72,9 +74,9 @@ class TenantRequestHandler(
     }
 
     // Normal case: set up transaction
-    val tx = TenantTransaction(tenantId, dataSource)
+    val tx = Transaction()
 
-    return withContext(context + TenantTransactionContext(tx)) {
+    return withContext(context + TransactionContext(tx)) {
       tx.attachToThread()
       try {
         handler(exchange).also {

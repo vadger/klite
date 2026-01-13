@@ -6,9 +6,9 @@ Multitenancy support for klite-jdbc, enabling multiple tenant databases alongsid
 
 - **TenantContext**: Thread-local tenant awareness for request-scoped tenant resolution
 - **TenantDataSource**: Dynamic DataSource wrapper for DI-compatible tenant repositories
-- **TenantTransaction**: Tenant-aware transaction handling with coroutine context support
 - **TenantMigrator**: On-demand database migrations per tenant
 - **TenantRequestHandler**: Request decorator that sets up tenant context automatically
+- Uses standard [Transaction](https://github.com/klite-team/klite/blob/main/jdbc/src/Transaction.kt) from jdbc module for transaction management
 
 ## Usage
 

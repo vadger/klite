@@ -1,5 +1,7 @@
 package klite.jdbc.multitenant
 
+import klite.jdbc.Transaction
+import klite.jdbc.TransactionContext
 import kotlinx.coroutines.withContext
 import javax.sql.DataSource
 
@@ -78,7 +80,7 @@ suspend fun <T> TenantDataSourceProvider.withTenant(tenantId: TenantId, block: s
 
 /**
  * Execute a block within a tenant transaction.
- * Sets up both [TenantContext] and [TenantTransaction] with proper commit/rollback.
+ * Sets up both [TenantContext] and [Transaction] with proper commit/rollback.
  *
  * - On success: transaction is committed
  * - On exception: transaction is rolled back
@@ -105,9 +107,9 @@ suspend fun <T> TenantDataSourceProvider.withTenant(tenantId: TenantId, block: s
 suspend fun <T> TenantDataSourceProvider.withTenantTransaction(tenantId: TenantId, block: suspend () -> T): T {
   val dataSource = getDataSource(tenantId)
   val context = TenantContext(tenantId, dataSource)
-  val tx = TenantTransaction(tenantId, dataSource)
+  val tx = Transaction()
 
-  return withContext(context + TenantTransactionContext(tx)) {
+  return withContext(context + TransactionContext(tx)) {
     context.attachToThread()
     tx.attachToThread()
     try {
