@@ -1,3 +1,10 @@
+# Unreleased
+* server: StatusCodeExceptions will now contain stack trace in dev mode
+* server: HttpExchange.attr/attrPut can be used for class-based attributes
+* server: introduce `rateLimit()` decorator
+* jdbc: Transaction now supports multiple DataSources (one connection per each)
+* json: Sequence can now be rendered to json directly (as an array)
+
 # 1.7.3
 * openapi: fix detection of default (undefined) schema implementation
 * openapi: better support for annotation instances created directly in Kotlin code
